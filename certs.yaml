@@ -1,0 +1,18 @@
+- hosts: all
+
+  pre_tasks:
+    - block:
+        - name: stat root CA certificate
+          stat:
+            path: "{{ certs_local_dir }}/{{ certs_ca_cert }}"
+          register: certs_ca_cert_stat
+        - name: check root CA certificate
+          assert:
+            that:
+              - certs_ca_cert_stat.stat.exists
+      delegate_to: localhost
+      run_once: true
+      when: not certs_use_local_ca
+
+  roles:
+    - certs

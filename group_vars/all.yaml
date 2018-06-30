@@ -1,0 +1,7 @@
+use_local_root_CA: true
+
+# Secrets
+# Change these and use 'ansible-vault encrypt_string' in production
+certs_jks_key_password: changeit
+certs_jks_store_password: changeit
+certs_ca_password: changeit

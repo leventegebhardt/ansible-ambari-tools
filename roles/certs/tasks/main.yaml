@@ -1,0 +1,114 @@
+- name: create directory for certificates (local)
+  delegate_to: localhost
+  file:
+    path: "{{ certs_local_dir }}"
+    state: directory
+  run_once: true
+
+- name: create directory for certificates
+  become: true
+  file:
+    path: "{{ certs_dir }}"
+    state: directory
+
+- name: create root CA certificate (local)
+  delegate_to: localhost
+  command: >
+    openssl req
+      -new
+      -x509 
+      -subj "{{ certs_ca_subject }}"
+      -keyout "{{ certs_ca_key }}"
+      -out "{{ certs_ca_cert }}"
+      -days "{{ certs_ca_days }}"
+      -passin "pass:{{ certs_ca_password }}"
+      -passout "pass:{{ certs_ca_password }}"
+  args:
+    chdir: "{{ certs_local_dir }}"
+    creates: "{{ certs_ca_cert }}"
+  run_once: true
+  when: certs_use_local_ca
+
+- name: create keystore file
+  become: true
+  command: >
+    keytool -genkey
+      -alias "{{ ansible_hostname }}"
+      -dname "CN={{ ansible_hostname }},{{ certs_jks_subject_suffix }}"
+      -keystore "{{ certs_jks_file }}"
+      -keypass "{{ certs_jks_key_password }}"
+      -storepass "{{ certs_jks_store_password }}"
+      -keyalg RSA
+      -keysize "{{ certs_jks_keysize }}"
+  args:
+    chdir: "{{ certs_dir }}"
+    creates: "{{ certs_jks_file }}"
+
+- name: create certificate request
+  become: true
+  command: >
+    keytool -certreq
+      -alias "{{ ansible_hostname }}"
+      -file "{{ certs_jks_req }}"
+      -keystore "{{ certs_jks_file }}"
+      -keypass "{{ certs_jks_key_password }}"
+      -storepass "{{ certs_jks_store_password }}"
+  args:
+    chdir: "{{ certs_dir }}"
+    creates: "{{ certs_jks_req }}"
+
+- name: pull certificate requests
+  become: true
+  fetch:
+    src: "{{ certs_dir}}/{{ certs_jks_req }}"
+    dest: "{{ certs_local_dir }}/{{ inventory_hostname }}_{{ certs_jks_req }}"
+    flat: yes
+  args:
+    creates: "{{ certs_local_dir }}/{{ inventory_hostname }}_{{ certs_jks_req }}"
+
+- name: sign certificate requests (local)
+  delegate_to: localhost
+  command: >
+    openssl x509 -req
+      -in "{{ inventory_hostname }}_{{ certs_jks_req }}"
+      -out "{{ inventory_hostname }}_{{ certs_jks_cert }}"
+      -days "{{ certs_ca_sign_days }}"
+      -CA "{{ certs_ca_cert }}"
+      -CAkey "{{ certs_ca_key }}"
+      -CAcreateserial
+      -passin "pass:{{ certs_ca_password }}"
+  args:
+    chdir: "{{ certs_local_dir }}"
+    creates: "{{ inventory_hostname }}_{{ certs_jks_cert }}"
+  when: certs_use_local_ca
+
+- name: sign certificate requests (external)
+  pause:
+    prompt: "Sign all *_{{ cert_jks_req }} files in {{ certs_dir }} directory"
+  when: not certs_use_local_ca
+
+- name: push certificates
+  become: true
+  copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+  loop:
+    - src: "{{ certs_local_dir }}/{{ inventory_hostname }}_{{ certs_jks_cert }}"
+      dest: "{{ certs_dir}}/{{ certs_jks_cert }}"
+    - src: "{{ certs_local_dir }}/{{ certs_ca_cert }}"
+      dest: "{{ certs_dir }}/{{ certs_ca_cert }}"
+
+- name: import certificates
+  become: true
+  java_cert:
+    cert_alias: "{{ item.alias }}"
+    cert_path: "{{ certs_dir }}/{{ item.file }}"
+    keystore_path: "{{ certs_dir }}/{{ certs_jks_file }}"
+    keystore_pass: "{{ certs_jks_store_password }}"
+  loop:
+    - alias: "{{ certs_ca_alias }}"
+      file: "{{ certs_ca_cert }}"
+    - alias: "{{ ansible_hostname }}"
+      file: "{{ certs_jks_cert }}"
+  loop_control:
+    label: "{{ item.alias }}"
