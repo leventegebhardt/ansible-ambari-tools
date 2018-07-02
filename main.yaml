@@ -1,1 +1,14 @@
-- import_playbook: certs.yaml
+---
+- hosts: all
+
+- import_playbook: component_kafka.yaml
+  tags:
+    - kafka
+
+- import_playbook: component_accumulo.yaml
+  tags:
+    - accumulo
+
+- import_playbook: component_nifi.yaml
+  tags:
+    - nifi

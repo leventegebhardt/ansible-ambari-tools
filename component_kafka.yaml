@@ -1,0 +1,4 @@
+---
+- hosts: KAFKA_BROKER
+  roles:
+    - name: kafka
